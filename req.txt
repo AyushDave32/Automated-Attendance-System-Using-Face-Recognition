@@ -1,0 +1,6 @@
+opencv-python
+torch==2.1.2+cu126  # Adjust the version as needed
+torchvision==0.16.2+cu126  # Match PyTorch version
+torchaudio==2.1.2+cu126
+tensorflow==2.17.0  # Adjust the version as per CUDA compatibility
+retinaface
