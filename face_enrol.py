@@ -9,10 +9,11 @@ from ultralytics import YOLO
 from huggingface_hub import hf_hub_download
 
 # Define folder path containing images
-folder_path = "./Database/Yash"
+folder_path = "./Database/Nihar"
 
-# Load YOLOv11 face detection model
-model = YOLO('yolo11n.pt') 
+# Load YOLOv8 face detection model
+model_path = hf_hub_download(repo_id="arnabdhar/YOLOv8-Face-Detection", filename="model.pt")
+model = YOLO(model_path)
 
 # Initialize FAISS for face embeddings
 embedding_dim = 512  
@@ -62,7 +63,7 @@ for filename in os.listdir(folder_path):
         img = cv2.imread(image_path)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Detect face using YOLOv11
+        # Detect face using YOLO
         results = model(img_rgb)
         for result in results:
             for box in result.boxes:
@@ -74,7 +75,7 @@ for filename in os.listdir(folder_path):
                 aligned_face = cv2.resize(aligned_face, (112, 112))  
 
                 try:
-                    embedding = DeepFace.represent(aligned_face, model_name="ArcFace",enforce_detection=False)
+                    embedding = DeepFace.represent(aligned_face, model_name="ArcFace", detector_backend="retinaface")
                     if embedding:
                         embedding_vector = np.array(embedding[0]["embedding"]).astype("float32").reshape(1, -1)
                         embedding_vector /= np.linalg.norm(embedding_vector)

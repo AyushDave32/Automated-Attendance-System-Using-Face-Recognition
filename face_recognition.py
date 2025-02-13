@@ -12,7 +12,8 @@ import pickle
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # Load YOLOv8 face detection model
-model = YOLO('yolov11n-face.pt') 
+model_path = hf_hub_download(repo_id="arnabdhar/YOLOv8-Face-Detection", filename="model.pt")
+model = YOLO(model_path)
 
 # FAISS setup (512-dimensional embeddings)
 embedding_dim = 512  
@@ -55,7 +56,8 @@ def align_face(img):
     return img  
 
 cap = cv2.VideoCapture(0)
-cap.set(3, 640)
+
+cap.set(3, 640)  
 cap.set(4, 480)  
 
 prev_time = 0
@@ -80,23 +82,18 @@ while True:
             aligned_face = cv2.resize(aligned_face, (112, 112))
 
             try:
-                embedding = DeepFace.represent(aligned_face, model_name="ArcFace",enforce_detection=False)
+                embedding = DeepFace.represent(aligned_face, model_name="ArcFace", detector_backend="retinaface")
 
                 if embedding:
                     embedding_vector = np.array(embedding[0]["embedding"]).astype("float32").reshape(1, -1)
                     embedding_vector /= np.linalg.norm(embedding_vector)
 
-                    Thresh = 0.4 
-                    
                     if faiss_index.is_trained and faiss_index.ntotal > 0:
                         distances, indices = faiss_index.search(embedding_vector, k=1)
                         closest_index = indices[0][0]
                         distance = distances[0][0]
-                        
-                        if distance < Thresh:  
-                            name = list(embedding_db.keys())[closest_index]
-                        else:
-                            name = "Unknown"
+
+                        name = list(embedding_db.keys())[closest_index] if distance < 1 else "Unknown1"
                     else:
                         name="unknown2"
                     print(f"Recognized: {name} (Distance: {distance:.2f})")
