@@ -1,37 +1,60 @@
+import cv2
 import os
-import random
-import shutil
 
-# Define paths
-SAVE_DIR = "wider_yolo_dataset"
-IMAGE_DIR = os.path.join(SAVE_DIR, "images/train")
-LABEL_DIR = os.path.join(SAVE_DIR, "labels/train")
+# Initialize Haar Cascade Classifier for face detection
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-VAL_IMAGE_DIR = os.path.join(SAVE_DIR, "images/val")
-VAL_LABEL_DIR = os.path.join(SAVE_DIR, "labels/val")
+# Set up webcam capture
+cap = cv2.VideoCapture(0)
 
-# Create validation directories
-os.makedirs(VAL_IMAGE_DIR, exist_ok=True)
-os.makedirs(VAL_LABEL_DIR, exist_ok=True)
+# Create a folder to store the dataset
+dataset_path = "dataset/Ayush/"
+if not os.path.exists(dataset_path):
+    os.makedirs(dataset_path)
 
-# List all images
-all_images = os.listdir(IMAGE_DIR)
-random.shuffle(all_images)  # Shuffle to randomize selection
+# Initialize a counter for the number of images
+count = 0
 
-# Define split ratio (80% train, 20% val)
-split_ratio = 0.8
-split_index = int(len(all_images) * split_ratio)
+# Give the user time to get ready for the camera
+print("Please look at the camera...")
 
-train_images = all_images[:split_index]
-val_images = all_images[split_index:]
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    # Convert the frame to grayscale (Haar classifier works on grayscale images)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    # Detect faces in the frame
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    
+    for (x, y, w, h) in faces:
+        # Draw a rectangle around the face
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        
+        # Crop the detected face from the frame
+        face = frame[y:y+h, x:x+w]
+        
+        # Save the face image to the dataset folder
+        face_filename = os.path.join(dataset_path, f"face_{count}.jpg")
+        cv2.imwrite(face_filename, face)
+        
+        # Increment the counter
+        count += 1
+        
+        # Stop after collecting a fixed number of faces (e.g., 100 images)
+        if count >= 1000:
+            print("Dataset creation complete.")
+            break
+    
+    # Display the frame with the detected face
+    cv2.imshow("Face Capture", frame)
 
-# Move validation images and labels
-for img in val_images:
-    img_path = os.path.join(IMAGE_DIR, img)
-    label_path = os.path.join(LABEL_DIR, img.replace(".jpg", ".txt"))  # YOLO format label
+    # Exit if the user presses the 'q' key
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-    # Move files to validation set
-    shutil.move(img_path, os.path.join(VAL_IMAGE_DIR, img))
-    shutil.move(label_path, os.path.join(VAL_LABEL_DIR, img.replace(".jpg", ".txt")))
-
-print("✅ Dataset successfully split into train and validation sets!")
+# Release the webcam and close the window
+cap.release()
+cv2.destroyAllWindows()

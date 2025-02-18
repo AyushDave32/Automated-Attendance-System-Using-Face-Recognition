@@ -1,91 +1,77 @@
-# import cv2
-# import time
-# import logging
-# from ultralytics import YOLO
-# from deepface import DeepFace
-# from huggingface_hub import hf_hub_download
+import cv2
+import numpy as np
+import hnswlib
+from deepface import DeepFace
+from ultralytics import YOLO
 
-# # Configure logging
-# logging.basicConfig(level=logging.ERROR)
+# Load YOLO Model for Face Detection
+model = YOLO('yolov11n-face.pt')
 
-# # Download YOLO model
-# model_path = hf_hub_download(repo_id="arnabdhar/YOLOv8-Face-Detection", filename="model.pt")
-# model = YOLO(model_path)
+# Load HNSW Face Embedding Index
+dim = 512  # ArcFace embedding size
+index = hnswlib.Index(space='cosine', dim=dim)
+index.load_index("face_embeddings.bin")
 
-# # Open webcam (0 for built-in, 1 for external)
-# cap = cv2.VideoCapture(0)
-# cap.set(3, 640)  # Width
-# cap.set(4, 480)  # Height
+# Load stored face labels and map them to image filenames
+face_db = np.load("face_db.npy", allow_pickle=True).item()
 
-# while cap.isOpened():
-#     ret, frame = cap.read()
-#     if not ret:
-#         break
+# Assuming face_db contains {id: image_filename} format, if not, adjust as necessary.
+id_to_image = face_db  # Directly using the face_db to map IDs to image filenames
 
-#     start_time = time.time()
-#     results = model(frame)
+# Open Camera
+cap = cv2.VideoCapture(0)
 
-#     for result in results:
-#         for box in result.boxes:
-#             x1, y1, x2, y2 = map(int, box.xyxy[0])
-#             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-#             # Crop face
-#             face = frame[y1:y2, x1:x2]
+    results = model(frame)  # Face Detection
 
-#             # Recognize face
-#             try:
-#                 result = DeepFace.find(face, db_path="Database", model_name="ArcFace", enforce_detection=False)
-#                 if result and len(result[0]) > 0:
-#                     name = result[0]['identity'][0].split("\\")[-1]
-#                     cv2.putText(frame, name, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-#                 else:
-#                     cv2.putText(frame, "Unknown", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-#             except Exception as e:
-#                 logging.error(f"Face recognition error: {e}")
+    for result in results:
+        for box in result.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            face = frame[y1:y2, x1:x2]  # Crop detected face
 
-#     # Display FPS
-#     fps = 1 / (time.time() - start_time)
-#     cv2.putText(frame, f"FPS: {int(fps)}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+            if face.size != 0:
+                # Convert face to RGB
+                face_rgb = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
 
-#     # Show output
-#     cv2.imshow("Face Recognition", frame)
-#     if cv2.waitKey(1) & 0xFF == ord("q"):
-#         break
+                try:
+                    # Extract face embedding
+                    embedding = DeepFace.represent(face_rgb, model_name="ArcFace", enforce_detection=False)
+                    if embedding:
+                        query_vector = np.array([embedding[0]["embedding"]]).astype("float32")
 
-# cap.release()
-# cv2.destroyAllWindows()
+                        # Normalize vector
+                        query_vector /= np.linalg.norm(query_vector)
 
-import os
-import shutil
-import random
+                        # Perform HNSW search
+                        labels, distances = index.knn_query(query_vector, k=1)
 
-# Set paths
-train_images_dir = "dataset/images/train/images"
-train_labels_dir = "dataset/images/train/labels"
-val_images_dir = "dataset/images/valid/images"
-val_labels_dir = "dataset/images/valid/labels"
+                        # Recognize person if match is found
+                        threshold = 0.6  # Experiment with this threshold
+                        if distances[0][0] < threshold:
+                            # Retrieve the image filename instead of name
+                            matched_image = id_to_image.get(labels[0][0], "Unknown image")
+                        else:
+                            matched_image = "No match"
 
-# Ensure validation directories exist
-os.makedirs(val_images_dir, exist_ok=True)
-os.makedirs(val_labels_dir, exist_ok=True)
+                        # Display image filename on screen
+                        cv2.putText(frame, f"{matched_image}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
-# Get list of image files (assuming images are .jpg and labels are .txt)
-image_files = [f for f in os.listdir(train_images_dir) if f.endswith(".jpg")]
+                except Exception as e:
+                    print(f"Error extracting embedding: {e}")
 
-# Define percentage of files to move
-val_split = 0.2  # Move 20% to validation set
-num_to_move = int(len(image_files) * val_split)
+            # Draw bounding box
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-# Randomly select files to move
-val_images = random.sample(image_files, num_to_move)
+    # Display results
+    cv2.imshow("Real-Time Face Recognition", frame)
 
-# Move files
-for img in val_images:
-    label = img.replace(".jpg", ".txt")  # Assuming label file has the same name
-    shutil.move(os.path.join(train_images_dir, img), os.path.join(val_images_dir, img))
-    if os.path.exists(os.path.join(train_labels_dir, label)):
-        shutil.move(os.path.join(train_labels_dir, label), os.path.join(val_labels_dir, label))
+    # Exit on pressing 'q'
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
 
-print(f"Moved {num_to_move} images and their labels to the validation set.")
-    
+cap.release()
+cv2.destroyAllWindows()

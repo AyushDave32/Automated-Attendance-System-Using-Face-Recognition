@@ -12,8 +12,7 @@ from huggingface_hub import hf_hub_download
 folder_path = "./Database/Nihar"
 
 # Load YOLOv8 face detection model
-model_path = hf_hub_download(repo_id="arnabdhar/YOLOv8-Face-Detection", filename="model.pt")
-model = YOLO(model_path)
+model = YOLO('yolov11m-face.pt')
 
 # Initialize FAISS for face embeddings
 embedding_dim = 512  
