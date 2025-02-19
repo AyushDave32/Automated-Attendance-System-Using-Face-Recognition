@@ -1,60 +1,44 @@
 import cv2
 import os
 
-# Initialize Haar Cascade Classifier for face detection
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+def gen_data():
+    face_class = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 
-# Set up webcam capture
-cap = cv2.VideoCapture(0)
+    def crop_face(img):
+        gray_sc = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_class.detectMultiScale(gray_sc, 1.3, 5)
 
-# Create a folder to store the dataset
-dataset_path = "dataset/Ayush/"
-if not os.path.exists(dataset_path):
-    os.makedirs(dataset_path)
-
-# Initialize a counter for the number of images
-count = 0
-
-# Give the user time to get ready for the camera
-print("Please look at the camera...")
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-    
-    # Convert the frame to grayscale (Haar classifier works on grayscale images)
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    
-    # Detect faces in the frame
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-    
-    for (x, y, w, h) in faces:
-        # Draw a rectangle around the face
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        if len(faces) == 0:  # Fix: Correct way to check if faces were detected
+            return None
         
-        # Crop the detected face from the frame
-        face = frame[y:y+h, x:x+w]
-        
-        # Save the face image to the dataset folder
-        face_filename = os.path.join(dataset_path, f"face_{count}.jpg")
-        cv2.imwrite(face_filename, face)
-        
-        # Increment the counter
-        count += 1
-        
-        # Stop after collecting a fixed number of faces (e.g., 100 images)
-        if count >= 1000:
-            print("Dataset creation complete.")
-            break
+        for (x, y, w, h) in faces:
+            crop_face = img[y:y+h, x:x+w]
+            return crop_face  # Fix: Return the first detected face
     
-    # Display the frame with the detected face
-    cv2.imshow("Face Capture", frame)
+    cap = cv2.VideoCapture(0)
+    id = 1
+    img_id = 0
 
-    # Exit if the user presses the 'q' key
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    while True:
+        ret, frame = cap.read()
+        face = crop_face(frame)  # Fix: Call the correct function
+        
+        if face is not None:
+            img_id += 1
+            face = cv2.resize(face, (200, 200))
+            face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+            
+            dataset_path = f"dataset/Ayush/a.{id}.{img_id}.jpg"
+            cv2.imwrite(dataset_path, face)
+            cv2.putText(face, str(img_id), (50, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0))
 
-# Release the webcam and close the window
-cap.release()
-cv2.destroyAllWindows()
+            cv2.imshow("Cropped face", face)
+
+            if cv2.waitKey(1) == 13 or img_id == 250:  # Stop at 250 images
+                break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+# Run the dataset generation function
+gen_data()

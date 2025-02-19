@@ -50,14 +50,13 @@ while True:
                         labels, distances = index.knn_query(query_vector, k=1)
 
                         # Recognize person if match is found
-                        threshold = 0.6  # Experiment with this threshold
-                        if distances[0][0] < threshold:
-                            # Retrieve the image filename instead of name
+                        threshold = 0.6  # You can experiment with this threshold
+                        if distances[0][0] < threshold:  # If distance is below the threshold
                             matched_image = id_to_image.get(labels[0][0], "Unknown image")
                         else:
                             matched_image = "No match"
 
-                        # Display image filename on screen
+                        # Display image filename or "No match" on screen
                         cv2.putText(frame, f"{matched_image}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
                 except Exception as e:

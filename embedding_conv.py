@@ -1,5 +1,6 @@
 import os
 from deepface import DeepFace
+import cv2
 import numpy as np
 
 # Load images from the dataset folder
@@ -12,12 +13,19 @@ face_db = {}  # Dictionary to map face ID to image filename
 
 for idx, face_image in enumerate(face_images):
     try:
-        # Generate embedding for each face image
-        embedding = DeepFace.represent(face_image, model_name="ArcFace", enforce_detection=False)
+        # Load the image
+        image = cv2.imread(face_image)
+
+        # Convert the image to grayscale
+        grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        # Generate embedding for each face image using DeepFace
+        embedding = DeepFace.represent(grayscale_image, model_name="ArcFace", enforce_detection=False)
         embeddings.append(embedding[0]["embedding"])
-        
+
         # Add the image filename to the face_db dictionary
         face_db[idx] = face_image  # Mapping face ID (idx) to image filename
+
     except Exception as e:
         print(f"Error processing {face_image}: {e}")
 
