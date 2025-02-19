@@ -1,40 +1,52 @@
 import cv2
 import os
+import torch
+from ultralytics import YOLO
+
+# Load YOLOv11 face detection model
+model = YOLO("yolov11n-face.pt")  # Ensure you have the correct model file
+
+def crop_face(img):
+    results = model(img)  # Perform face detection
+    for result in results:
+        for box in result.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])  # Get bounding box coordinates
+
+            # Crop the detected face
+            crop_face = img[y1:y2, x1:x2]
+            return crop_face  # Return the first detected face
+    return None
 
 def gen_data():
-    face_class = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
-
-    def crop_face(img):
-        gray_sc = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_class.detectMultiScale(gray_sc, scaleFactor=1.1, minNeighbors=7)
-
-        if len(faces) == 0:  # Fix: Correct way to check if faces were detected
-            return None
-        
-        for (x, y, w, h) in faces:
-            crop_face = img[y:y+h, x:x+w]
-            return crop_face  # Fix: Return the first detected face
-    
     cap = cv2.VideoCapture(0)
-    id = 1
+    person_id = 1  # Start with person 1
     img_id = 0
+
+    os.makedirs("dataset/Ayush", exist_ok=True)  # Ensure the dataset folder exists
 
     while True:
         ret, frame = cap.read()
-        face = crop_face(frame)  # Fix: Call the correct function
+        if not ret:
+            print("Failed to capture frame.")
+            continue
+        
+        face = crop_face(frame)  
         
         if face is not None:
             img_id += 1
-            face = cv2.resize(face, (200, 200))
-            face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-            
-            dataset_path = f"dataset/Ayush/a.{id}.{img_id}.jpg"
-            cv2.imwrite(dataset_path, face)
+            face = cv2.resize(face, (200, 200))  # Resize face image
+            dataset_path = f"dataset/Ayush/p.{person_id}.{img_id}.jpg"
+            cv2.imwrite(dataset_path, face)  # Save the face image in color (BGR)
             cv2.putText(face, str(img_id), (50, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0))
 
-            cv2.imshow("Cropped face", face)
+            cv2.imshow("Cropped Face", face)
 
-            if cv2.waitKey(1) == 13 or img_id == 250:  # Stop at 250 images
+            # If 200 images are captured for one person, change the person_id
+            if img_id == 200:
+                person_id += 1  # Switch to the next person
+                img_id = 0  # Reset image id for the new person
+
+            if cv2.waitKey(1) == 13:  # Press Enter to stop capturing
                 break
 
     cap.release()
@@ -42,3 +54,4 @@ def gen_data():
 
 # Run the dataset generation function
 gen_data()
+

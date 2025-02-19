@@ -1,62 +1,43 @@
-import os
 import cv2
+import os
 import numpy as np
-from PIL import Image
+from deepface import DeepFace
+import joblib  # Library to save and load data
 
-def training(data_dir):
-    dataset_path = "dataset/Ayush"
-    face_images = [os.path.join(dataset_path, f) for f in os.listdir(dataset_path)]
-    faces = []
-    ids = []
+def generate_embeddings(image_paths):
+    embeddings = []
+    labels = []
+    
+    for image_path in image_paths:
+        try:
+            # Read the image
+            img = cv2.imread(image_path)
+            # Convert to RGB for DeepFace
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            # Generate the face embedding using DeepFace
+            embedding = DeepFace.represent(img_rgb, model_name="ArcFace", enforce_detection=False)
+            embeddings.append(embedding[0]["embedding"])
 
-    for img in face_images:
-        image = cv2.imread(img, cv2.IMREAD_GRAYSCALE)  # Fix: Read image correctly
-        if image is None:
-            print(f"Skipping invalid image: {img}")
-            continue  # Skip if image is not readable
-        
-        imageNP = np.array(image, 'uint8')  # Convert to NumPy array
-        id = int(os.path.split(img)[1].split(".")[1])  # Extract ID from filename
+            # The label for each image could be its filename (person ID)
+            label = os.path.basename(image_path).split('.')[0]  # Example: 'a.1.1.jpg' -> 'a.1'
+            labels.append(label)
 
-        faces.append(imageNP)
-        ids.append(id)
+        except Exception as e:
+            print(f"Error processing image {image_path}: {e}")
+    
+    return embeddings, labels
 
-    ids = np.array(ids)  # Fix: Correctly convert IDs to NumPy array
+# Example Usage:
+# Assuming you have face images in the "dataset/Ayush" folder
+image_paths = [os.path.join("dataset/Ayush", f) for f in os.listdir("dataset/Ayush") if f.endswith('.jpg')]
 
-    t_clf = cv2.face.LBPHFaceRecognizer_create()
-    t_clf.train(faces, ids)
-    t_clf.write("recog.xml")
+# Generate embeddings
+embeddings, labels = generate_embeddings(image_paths)
 
-training("dataset/Ayush")
+# Save the embeddings and labels for future use
+joblib.dump(embeddings, 'embeddings.pkl')  # Save embeddings to a file
+joblib.dump(labels, 'labels.pkl')  # Save labels to a file
 
-
-# # List to store embeddings and face IDs
-# embeddings = []
-# face_db = {}  # Dictionary to map face ID to image filename
-
-# for idx, face_image in enumerate(face_images):
-#     try:
-#         # Load the image
-#         image = cv2.imread(face_image)
-
-#         # Convert the image to grayscale
-#         grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-#         # Generate embedding for each face image using DeepFace
-#         embedding = DeepFace.represent(grayscale_image, model_name="ArcFace", enforce_detection=False)
-#         embeddings.append(embedding[0]["embedding"])
-
-#         # Add the image filename to the face_db dictionary
-#         face_db[idx] = face_image  # Mapping face ID (idx) to image filename
-
-#     except Exception as e:
-#         print(f"Error processing {face_image}: {e}")
-
-# # Convert embeddings to numpy array
-# embeddings = np.array(embeddings)
-
-# # Save the embeddings and the face_db for future recognition
-# np.save("face_embeddings.npy", embeddings)
-# np.save("face_db.npy", face_db)
-
-# print("Embeddings and face_db saved successfully.")
+# Print confirmation
+print("Embeddings and labels saved successfully.")
