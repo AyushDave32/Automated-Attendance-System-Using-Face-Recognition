@@ -6,7 +6,7 @@ def gen_data():
 
     def crop_face(img):
         gray_sc = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_class.detectMultiScale(gray_sc, 1.3, 5)
+        faces = face_class.detectMultiScale(gray_sc, scaleFactor=1.1, minNeighbors=7)
 
         if len(faces) == 0:  # Fix: Correct way to check if faces were detected
             return None
