@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Capture</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        input,
+        button {
+            margin: 10px 0;
+            padding: 8px;
+            width: 200px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Capture Face Images</h2>
+        <form id="captureForm">
+            <div>
+                <label for="person_name">Person Name:</label><br>
+                <input type="text" id="person_name" name="person_name" required>
+            </div>
+            <div>
+                <label for="num_images">Number of Images:</label><br>
+                <input type="number" id="num_images" name="num_images" min="1" required>
+            </div>
+            <button type="submit">Start Capture</button>
+        </form>
+        <p id="result"></p>
+    </div>
+    <script>
+        document.getElementById('captureForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const personName = document.getElementById('person_name').value;
+            const numImages = parseInt(document.getElementById('num_images').value);
+            const response = await fetch('/capture_image/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ person_name: personName, num_images: numImages })
+            });
+            const result = await response.json();
+            const resultDiv = document.getElementById('result');
+            if (response.ok) {
+                resultDiv.style.color = 'green';
+                resultDiv.textContent = `${result.message}\nImages saved in: ${result.folder}`;
+            } else {
+                resultDiv.style.color = 'red';
+                resultDiv.textContent = `Error: ${result.detail}`;
+            }
+        });
+    </script>
+</body>
+
+</html>
