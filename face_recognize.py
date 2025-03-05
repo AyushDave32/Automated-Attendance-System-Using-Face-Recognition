@@ -190,7 +190,7 @@ async def store_embeddings(image_folder: str):
 # Recognize Live Function
 def recognize_live_task():
     global cap, recognition_running, detection_tracker, logged_names
-    cap = cv2.VideoCapture("rtsp://admin:12345@192.168.1.100:554/Streaming/Channels/101")  # Hikvision RTSP
+    cap = cv2.VideoCapture(0)  # Hikvision RTSP
     if not cap.isOpened():
         print("Error: Could not open video.")
         return
@@ -242,7 +242,7 @@ def recognize_live_task():
         for x1, y1, x2, y2, confidence, class_id in detections:
             if confidence > 0.4 and class_id == 0:
                 x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(img_w, x2), min(img_h,移動)
+                x2, y2 = min(img_w, x2), min(img_h, x1)
                 if x2 <= x1 or y2 <= y1:
                     print(f"Invalid bounding box: ({x1}, {y1}, {x2}, {y2})")
                     continue
@@ -285,7 +285,7 @@ def capture_images(name: str):
     folder_path = f"Database/{name}"
     os.makedirs(folder_path, exist_ok=True)
 
-    cap = cv2.VideoCapture(1)  # Webcam (adjust to 0 or RTSP if needed)
+    cap = cv2.VideoCapture(0)  
     if not cap.isOpened():
         raise HTTPException(status_code=500, detail="Error: Could not access the webcam.")
 
