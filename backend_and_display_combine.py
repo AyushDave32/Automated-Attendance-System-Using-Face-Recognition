@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 import tkinter as tk
 from tkinter import Label
+from tkinter import Button
 from PIL import Image, ImageTk
 
 # Define the RTSP stream sources
@@ -23,6 +24,8 @@ class CameraDashboard:
         self.root.geometry("800x600")  # Set window size
 
         self.labels = []  # Store Tkinter labels for displaying video feeds
+        self.show_second_camera = False  # Flag to control second camera visibility
+        self.cap_second_camera = None  # Handle for second camera video capture
 
         # Create a grid layout for displaying video feeds
         for i in range(1):
@@ -31,6 +34,10 @@ class CameraDashboard:
                 label.grid(row=i, column=j, padx=10, pady=10)
                 self.labels.append(label)
 
+        # Button to toggle the second camera feed
+        self.toggle_button = Button(root, text="Show Second Camera", command=self.toggle_second_camera)
+        self.toggle_button.grid(row=2, column=0, columnspan=2)
+
         # Start video threads for both laptop and phone cameras
         self.threads = []
         for i, source in enumerate(RTSP_STREAMS):
@@ -38,6 +45,33 @@ class CameraDashboard:
             thread.daemon = True
             thread.start()
             self.threads.append(thread)
+
+    def toggle_second_camera(self):
+        """Toggles the second camera feed on/off."""
+        self.show_second_camera = not self.show_second_camera
+        if self.show_second_camera:
+            self.toggle_button.config(text="Hide Second Camera")
+            self.start_second_camera()  # Start the second camera feed
+        else:
+            self.toggle_button.config(text="Show Second Camera")
+            self.stop_second_camera()  # Stop and remove the second camera feed
+
+    def start_second_camera(self):
+        """Starts the second camera feed."""
+        if self.cap_second_camera is None:
+            self.cap_second_camera = cv2.VideoCapture(RTSP_STREAMS[1])
+            if not self.cap_second_camera.isOpened():
+                print("Second camera not accessible.")
+                return
+            self.update_frame(1, RTSP_STREAMS[1])
+
+    def stop_second_camera(self):
+        """Stops and removes the second camera feed."""
+        if self.cap_second_camera is not None:
+            self.cap_second_camera.release()  # Release the video capture
+            self.cap_second_camera = None
+            self.labels[1].config(image=None)  # Remove the image from the second feed label
+            self.labels[1].image = None  # Clear the image reference
 
     def update_frame(self, index, source):
         cap = cv2.VideoCapture(source)
@@ -55,6 +89,10 @@ class CameraDashboard:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (320, 240))  # Resize to fit the grid
                 img = ImageTk.PhotoImage(Image.fromarray(frame))
+
+                # If the second camera is not supposed to be shown, skip updating it
+                if index == 1 and not self.show_second_camera:
+                    continue
 
                 # Ensure updates happen in the Tkinter thread
                 self.labels[index].after(10, self.update_image, index, img)
