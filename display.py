@@ -1,60 +1,63 @@
 import cv2
-import tkinter as tk
-from PIL import Image, ImageTk
 import threading
+import tkinter as tk
+from tkinter import Label
+from PIL import Image, ImageTk
 
-# RTSP Stream URLs (Replace with your camera URLs)
-RTSP_URLS = [
-    "rtsp://your_camera_1_url",
-    "rtsp://your_camera_2_url",
-    "rtsp://your_camera_3_url",
-    "rtsp://your_camera_4_url"
-]
+# List of camera sources (replace with your phone's RTSP URL and laptop camera)
+CAM_SOURCES = [0, 'rtsp://10.147.76.251:8080/video']  # Modify this with your phone camera URL
 
-class RTSPDashboard:
+class CameraDashboard:
     def __init__(self, root):
         self.root = root
         self.root.title("RTSP Camera Dashboard")
-        
-        # Create Labels for 4 camera feeds
-        self.labels = []
-        for i in range(4):
-            label = tk.Label(self.root, text=f"Camera {i+1}", bg="black", fg="white")
-            label.grid(row=i//2, column=i%2, padx=10, pady=10)
-            self.labels.append(label)
-        
-        # Start threads for each RTSP stream
-        self.streams = []
-        for i in range(4):
-            thread = threading.Thread(target=self.update_frame, args=(i,))
+        self.root.geometry("800x600")  # Set window size
+
+        self.labels = []  # Store Tkinter labels for displaying video feeds
+
+        # Create 1x2 grid layout for two video feeds (one for laptop and one for phone)
+        for i in range(1):
+            for j in range(2):
+                label = Label(root, bg="black")  # Black background for missing feed
+                label.grid(row=i, column=j, padx=10, pady=10)
+                self.labels.append(label)
+
+        # Start video threads for both laptop and phone cameras
+        self.threads = []
+        for i, source in enumerate(CAM_SOURCES):
+            thread = threading.Thread(target=self.update_frame, args=(i, source))
             thread.daemon = True
             thread.start()
-            self.streams.append(thread)
-    
-    def update_frame(self, index):
-        cap = cv2.VideoCapture(RTSP_URLS[index])
+            self.threads.append(thread)
+
+    def update_frame(self, index, source):
+        cap = cv2.VideoCapture(source)
+
         if not cap.isOpened():
-            print(f"Error: Cannot open RTSP stream {index+1}")
+            print(f"Camera {index} not accessible.")
             return
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                continue  # Skip if frame not captured
+        def video_loop():
+            while True:
+                success, frame = cap.read()
+                if not success:
+                    break
 
-            # Convert BGR to RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(frame)
-            img = img.resize((400, 300))  # Resize for display
-            img_tk = ImageTk.PhotoImage(img)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame = cv2.resize(frame, (320, 240))  # Resize to fit the grid
+                img = ImageTk.PhotoImage(Image.fromarray(frame))
 
-            # Update label with new frame
-            self.labels[index].config(image=img_tk)
-            self.labels[index].image = img_tk  # Keep reference to avoid garbage collection
+                # Ensure updates happen in the Tkinter thread
+                self.labels[index].after(10, self.update_image, index, img)
 
-        cap.release()
+        threading.Thread(target=video_loop, daemon=True).start()
+
+    def update_image(self, index, img):
+        self.labels[index].config(image=img)
+        self.labels[index].image = img
+
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = RTSPDashboard(root)
+    app = CameraDashboard(root)
     root.mainloop()
