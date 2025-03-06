@@ -16,6 +16,8 @@ import asyncio
 import time
 from pydantic import BaseModel
 import threading
+import smtplib
+from email.mime.text import MIMEText
 
 # Set environment variable
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -39,32 +41,70 @@ if os.path.exists("face_index.pkl"):
 
 print(f"Total faces in database: {faiss_index.ntotal}")
 
+# Dlib setup
 dlib_detector = dlib.get_frontal_face_detector()
 predictor_path = "shape_predictor_68_face_landmarks.dat"  # Path to Dlib's landmark predictor
 landmark_predictor = dlib.shape_predictor(predictor_path)
 
 # Global variables for tracking
-detection_tracker = {}
-logged_names = {}
+detection_tracker = {}  # Format: {name: {"count": int, "times": [datetime]}}
+logged_names = {}  # Format: {date_str: set(names)}
 cap = None  # VideoCapture object to be initialized later
 recognition_running = False  # Flag to control live recognition
 
-# Initialize SQLite database
+# Initialize SQLite databases
 def init_db():
     conn = sqlite3.connect("attendance.db")
     c = conn.cursor()
+    # Attendance table
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   name TEXT NOT NULL,
                   date TEXT NOT NULL,
                   time TEXT NOT NULL)''')
+    # Employee details table
+    c.execute('''CREATE TABLE IF NOT EXISTS employees
+                 (employee_id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  email TEXT NOT NULL)''')
     conn.commit()
     conn.close()
 
 init_db()
 
+# Email configuration (replace with your SMTP details)
+SMTP_SERVER = "smtp.gmail.com"  # Example: Gmail SMTP server
+SMTP_PORT = 587
+SMTP_USER = "mailto:ybalar500@gmail.com"  # Your email address
+SMTP_PASSWORD = "vhgy unuz ffgr hukk"  # Use an app-specific password if 2FA is enabled
+FROM_EMAIL = SMTP_USER
+
+def send_email(to_email, employee_name, timestamp):
+    """Sends an email notification to the recognized employee"""
+    date_str = timestamp.strftime("%Y-%m-%d")
+    time_str = timestamp.strftime("%H:%M:%S")
+    subject = f"Entry Notification - {date_str}"
+    body = f"Dear {employee_name},\n\nYou entered on {date_str} at {time_str} for the first time today.\n\nBest regards,\nYour Security Team"
+    
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = FROM_EMAIL
+    msg["To"] = to_email
+    
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            print("1")
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            print("2")
+            server.send_message(msg)
+        print(f"Email sent to {to_email} for {employee_name}")
+    except Exception as e:
+        print(f"Failed to send email to {to_email}: {e}")
+
 # Utility Functions
 def preprocess_onnx(img):
+    """Prepares the image for ONNX face detection model"""
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = cv2.resize(img, (640, 640))
     img = img / 255.0
@@ -73,6 +113,7 @@ def preprocess_onnx(img):
     return img
 
 def postprocess_onnx(outputs, orig_h, orig_w):
+    """Processes ONNX model output and scales detections to original image size"""
     outputs = torch.from_numpy(outputs)
     outputs = non_max_suppression(outputs, 0.5, 0.5)
     detections = []
@@ -86,6 +127,7 @@ def postprocess_onnx(outputs, orig_h, orig_w):
     return detections
 
 def align_face(img):
+    """Aligns face based on eye landmarks"""
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     faces = dlib_detector(gray)
     for face in faces:
@@ -101,6 +143,7 @@ def align_face(img):
     return img
 
 def is_face_straight(img):
+    """Checks if the face is straight (not sideways)"""
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     landmarks = landmark_predictor(gray, dlib.rectangle(0, 0, gray.shape[1], gray.shape[0]))
     nose = (landmarks.part(30).x, landmarks.part(30).y)
@@ -114,11 +157,12 @@ def is_face_straight(img):
     return True
 
 def extract_embedding(face):
+    """Extracts facial embeddings using FaceNet512"""
     if face is None or face.size == 0:
         print("Empty face crop detected.")
         return None
     try:
-        face = cv2.resize(face, (160, 160))
+        face = cv2.resize(face, (160, 160))  # FaceNet512 expects 160x160 input
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
         embedding = DeepFace.represent(face, model_name="Facenet512", enforce_detection=False)
         if isinstance(embedding, list) and len(embedding) > 0:
@@ -134,6 +178,7 @@ def extract_embedding(face):
     return None
 
 def log_to_db(name, timestamp):
+    """Log the recognized name to SQLite database"""
     date_str = timestamp.strftime("%Y-%m-%d")
     time_str = timestamp.strftime("%H:%M:%S")
     try:
@@ -147,6 +192,20 @@ def log_to_db(name, timestamp):
         print(f"Error writing to database: {e}")
     finally:
         conn.close()
+
+def get_employee_email(name):
+    """Retrieve employee's email from the employees table"""
+    try:
+        conn = sqlite3.connect("attendance.db")
+        c = conn.cursor()
+        print("name----------------",name)
+        c.execute("SELECT email FROM employees WHERE name = ?", (name,))
+        result = c.fetchone()
+        conn.close()
+        return result[0] if result else None
+    except sqlite3.Error as e:
+        print(f"Error retrieving email: {e}")
+        return None
 
 # Store Embeddings Function
 async def store_embeddings(image_folder: str):
@@ -190,11 +249,12 @@ async def store_embeddings(image_folder: str):
 # Recognize Live Function
 def recognize_live_task():
     global cap, recognition_running, detection_tracker, logged_names
-    cap = cv2.VideoCapture(0)  # Hikvision RTSP
+    cap = cv2.VideoCapture(1)  # Hikvision RTSP or webcam (adjust as needed)
     if not cap.isOpened():
         print("Error: Could not open video.")
         return
     
+    # Load existing names from SQLite to avoid duplicates on restart
     try:
         conn = sqlite3.connect("attendance.db")
         c = conn.cursor()
@@ -231,6 +291,7 @@ def recognize_live_task():
             last_checked_date = current_date_str
             print(f"Date changed to {current_date_str}. Switching to new day.")
         
+        # Remove names not detected within 2 seconds
         names_to_remove = []
         for name, data in list(detection_tracker.items()):
             if data["times"] and (current_time - data["times"][-1]) > timedelta(seconds=2) and data["count"] == 1:
@@ -242,14 +303,11 @@ def recognize_live_task():
         for x1, y1, x2, y2, confidence, class_id in detections:
             if confidence > 0.4 and class_id == 0:
                 x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(img_w, x2), min(img_h, x1)
+                x2, y2 = min(img_w, x2), min(img_h, y2)
                 if x2 <= x1 or y2 <= y1:
                     print(f"Invalid bounding box: ({x1}, {y1}, {x2}, {y2})")
                     continue
                 face = frame[y1:y2, x1:x2].copy()
-                if not is_face_straight(face):
-                    print("Skipping side-posed face.")
-                    continue
                 aligned_face = align_face(face)
                 aligned_face = cv2.resize(aligned_face, (112, 112))
                 embedding = extract_embedding(aligned_face)
@@ -263,7 +321,6 @@ def recognize_live_task():
                         name = name.split("_")[0]
                     
                     print(f"Recognized: {name} (Distance: {distance:.2f}, Confidence: {confidence:.2f})")
-                    
                     if name != "Unknown":
                         if name not in detection_tracker:
                             detection_tracker[name] = {"count": 0, "times": []}
@@ -275,6 +332,13 @@ def recognize_live_task():
                         if detection_tracker[name]["count"] > 3 and name not in logged_names[current_date_str]:
                             log_to_db(name, current_time)
                             logged_names[current_date_str].add(name)
+                            # Send email on first detection of the day
+                            email = get_employee_email(name)
+                            print("email: ",email)
+                            if email:
+                                send_email(email, name, current_time)
+                                print("email send ")
+                            print("email not send")
                             detection_tracker[name] = {"count": 0, "times": []}
     
     cap.release()
@@ -285,12 +349,12 @@ def capture_images(name: str):
     folder_path = f"Database/{name}"
     os.makedirs(folder_path, exist_ok=True)
 
-    cap = cv2.VideoCapture(0)  
+    cap = cv2.VideoCapture(1)  # Webcam or RTSP (adjust as needed)
     if not cap.isOpened():
         raise HTTPException(status_code=500, detail="Error: Could not access the webcam.")
 
-    num_photos = 100  # Number of photos to capture
-    delay = 70  # Delay in milliseconds
+    num_photos = 100
+    delay = 70
     captured_count = 0
 
     print(f"📸 Capturing {num_photos} images for '{name}'. Press 'q' to quit.")
@@ -355,7 +419,26 @@ async def capture_endpoint(request: CaptureRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# New endpoint to add employee details
+class EmployeeRequest(BaseModel):
+    employee_id: str
+    name: str
+    email: str
+
+@app.post("/add_employee")
+async def add_employee(request: EmployeeRequest):
+    try:
+        conn = sqlite3.connect("attendance.db")
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO employees (employee_id, name, email) VALUES (?, ?, ?)",
+                  (request.employee_id, request.name, request.email))
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": f"Employee {request.name} added/updated"}
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
 # Run the app
-if __name__ == "__main__":
+if _name_ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
