@@ -1,4 +1,4 @@
-# backend.py (or api_server.py)
+# backend.py
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
@@ -6,7 +6,7 @@ import threading
 import cv2
 from pydantic import BaseModel
 from display import RTSP_STREAMS, CameraDashboard
-from face import store_embeddings, recognize_live_task, recognition_running, cap  # Adjusted to 'face'
+from face import store_embeddings, recognize_live_task, recognition_running, cap  # Adjusted to 'face_recognition_module'
 import tkinter as tk
 
 app = FastAPI()
@@ -46,7 +46,6 @@ async def train_endpoint(request: TrainRequest):
 
 @app.post("/recognize/start")
 async def start_recognition(background_tasks: BackgroundTasks):
-    global recognition_running
     if recognition_running:
         raise HTTPException(status_code=400, detail="Recognition is already running.")
     background_tasks.add_task(recognize_live_task)
@@ -60,11 +59,12 @@ async def stop_recognition():
     recognition_running = False
     if cap is not None:
         cap.release()
+        cap = None
     return {"status": "Recognition stopped"}
 
 @app.post("/capture")
 async def capture_endpoint(request: CaptureRequest):
-    from face import capture_images  # Adjusted to 'face'
+    from face import capture_images
     try:
         result = capture_images(request.name)
         return result
@@ -73,7 +73,7 @@ async def capture_endpoint(request: CaptureRequest):
 
 @app.post("/add_employee")
 async def add_employee(request: EmployeeRequest):
-    from face import add_employee_to_db  # Adjusted to 'face'
+    from face_recognition_module import add_employee_to_db
     try:
         result = add_employee_to_db(request.employee_id, request.name, request.email)
         return result

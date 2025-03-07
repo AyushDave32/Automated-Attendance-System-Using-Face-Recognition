@@ -13,6 +13,7 @@ import onnxruntime as ort
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
+from display import RTSP_STREAMS  # Import RTSP_STREAMS from dashboard.py
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -206,10 +207,11 @@ async def store_embeddings(image_folder: str):
 
 def recognize_live_task():
     global cap, recognition_running, detection_tracker, logged_names
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(RTSP_STREAMS[0])
     if not cap.isOpened():
         print("Error: Could not open video.")
         return
+    print("Camera opened successfully, starting recognition...")
     try:
         conn = sqlite3.connect("attendance.db")
         c = conn.cursor()
@@ -223,6 +225,7 @@ def recognize_live_task():
         print(f"Error loading existing data: {e}")
     last_checked_date = None
     recognition_running = True
+    print(f"Recognition running set to: {recognition_running}")
     while recognition_running:
         ret, frame = cap.read()
         if not ret:
@@ -242,7 +245,7 @@ def recognize_live_task():
             print(f"Date changed to {current_date_str}. Switching to new day.")
         names_to_remove = []
         for name, data in list(detection_tracker.items()):
-            if data["times"] and (current_time - data["times"][-1]) > timedelta(seconds=2) and data["count"] == 1:
+            if data["times"] and (current_time - data["times"][-1]) > timedelta(seconds=2) and data["count"] <= 1:  # Relaxed condition
                 names_to_remove.append(name)
         for name in names_to_remove:
             del detection_tracker[name]
@@ -274,7 +277,8 @@ def recognize_live_task():
                         two_sec_ago = current_time - timedelta(seconds=2)
                         detection_tracker[name]["times"] = [t for t in detection_tracker[name]["times"] if t > two_sec_ago]
                         detection_tracker[name]["count"] = len(detection_tracker[name]["times"])
-                        if detection_tracker[name]["count"] > 3 and name not in logged_names[current_date_str]:
+                        print(f"Tracker for {name}: count={detection_tracker[name]['count']}, times={detection_tracker[name]['times']}")
+                        if detection_tracker[name]["count"] > 1 and name not in logged_names[current_date_str]:  # Lowered threshold to 2
                             log_to_db(name, current_time)
                             logged_names[current_date_str].add(name)
                             email = get_employee_email(name)
@@ -285,13 +289,14 @@ def recognize_live_task():
                             else:
                                 print("email not sent - no email found")
                             detection_tracker[name] = {"count": 0, "times": []}
-    cap.release()
+    if cap is not None:
+        cap.release()
     recognition_running = False
 
 def capture_images(name: str):
     folder_path = f"Database/{name}"
     os.makedirs(folder_path, exist_ok=True)
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(RTSP_STREAMS[0])  # Use laptop webcam (index 0)
     if not cap.isOpened():
         raise Exception("Error: Could not access the webcam.")
     num_photos = 100
@@ -307,12 +312,14 @@ def capture_images(name: str):
         cv2.imwrite(image_path, frame)
         captured_count += 1
         cv2.putText(frame, f"Photo {i}/{num_photos}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.imshow("Webcam", frame)
+        cv2.imshow("Capture", frame)
         if cv2.waitKey(delay) & 0xFF == ord("q"):
             print("🚪 Exiting early...")
             break
     cap.release()
     cv2.destroyAllWindows()
+    if captured_count == 0:
+        raise Exception("No images were captured.")
     print(f"✅ {captured_count} photos saved in '{folder_path}'")
     return {"status": "success", "name": name, "photos_captured": captured_count, "folder_path": folder_path}
 
